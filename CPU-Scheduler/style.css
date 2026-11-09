@@ -584,6 +584,7 @@ input:focus, select:focus {
   background: #000000;
   box-shadow: 0 0 20px rgba(255, 255, 255, 0.15);
   position: relative;
+  overflow: hidden;
 }
 
 .processing .cpu-core {
@@ -595,7 +596,11 @@ input:focus, select:focus {
   font: 7px 'Space Mono', monospace;
   letter-spacing: 0.14em;
   color: #888888;
+  position: absolute;
 }
+
+.core-label { top: 10px; }
+.core-number { bottom: 10px; }
 
 .cpu-process {
   height: 32px;
@@ -626,20 +631,26 @@ input:focus, select:focus {
   text-shadow: 0 0 8px #ffffff;
 }
 
-/* --- DINO CPU ANIMATION --- */
-.chip-icon { display: block; }
-.dino-icon { display: none; }
+/* --- CUSTOM GIF CPU ANIMATION --- */
+.chip-icon { 
+  display: block; 
+  color: #fff;
+}
 
-.processing .chip-icon { display: none; }
-.processing .dino-icon { display: block; animation: dino-bob 0.3s infinite alternate; }
+.dino-icon { 
+  display: none; 
+  width: 45px;           
+  height: 45px;          
+  object-fit: contain;   
+}
 
-.dino-leg-a, .dino-leg-b { opacity: 0; }
-.processing .dino-leg-a { animation: walk-a 0.25s infinite steps(1); }
-.processing .dino-leg-b { animation: walk-b 0.25s infinite steps(1); }
+.processing .chip-icon { 
+  display: none; 
+}
 
-@keyframes walk-a { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
-@keyframes walk-b { 0%, 49% { opacity: 0; } 50%, 100% { opacity: 1; } }
-@keyframes dino-bob { from { transform: translateY(0); } to { transform: translateY(-3px); } }
+.processing .dino-icon { 
+  display: block; 
+}
 
 /* --- TABLE --- */
 .matrix-panel {
