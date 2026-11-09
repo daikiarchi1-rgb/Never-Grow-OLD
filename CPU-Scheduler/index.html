@@ -10,7 +10,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
   
-  <!-- Link to your CSS file -->
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -154,7 +153,30 @@
             <div class="cpu-rings">
               <div class="cpu-core">
                 <span class="core-label">CPU</span>
-                <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="2" /><path d="M9 1v3m6-3v3M9 20v3m6-3v3M20 9h3m-3 6h3M1 9h3m-3 6h3" /></svg>
+                
+                <!-- Static Chip Icon (Shows when IDLE) -->
+                <svg class="chip-icon" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="7" y="7" width="10" height="10" rx="2" />
+                  <path d="M9 1v3m6-3v3M9 20v3m6-3v3M20 9h3m-3 6h3M1 9h3m-3 6h3" />
+                </svg>
+
+                <!-- Running Dino Icon (Shows when EXECUTING) -->
+                <svg class="dino-icon" width="38" height="38" viewBox="0 0 32 32" fill="currentColor">
+                  <path d="M18 6h7v7h-2v-5h-5zM23 8h2v2h-2z" />
+                  <path d="M14 11h9v3h-9z" />
+                  <path d="M12 14h13v7h-13z" />
+                  <path d="M9 16h3v5h-3z" />
+                  <g class="dino-leg-a">
+                    <path d="M14 21h3v5h-2v-2h-1z" />
+                    <path d="M20 21h3v3h-2v-1h-1z" />
+                  </g>
+                  <g class="dino-leg-b">
+                    <path d="M14 21h3v3h-2v-1h-1z" />
+                    <path d="M20 21h3v5h-2v-2h-1z" />
+                  </g>
+                  <circle cx="21" cy="9" r="1" fill="#000" />
+                </svg>
+
                 <span class="core-number">CORE 01</span>
               </div>
             </div>
@@ -245,7 +267,6 @@
     </main>
   </div>
 
-  <!-- Link to your JavaScript file -->
   <script src="script.js"></script>
 </body>
 </html>
