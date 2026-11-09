@@ -13,11 +13,6 @@ let playing = false;
 let playTimer = null;
 let metrics = {};
 
-// Tracking variables for the slide animation
-let prevRunningPid = null;
-let prevCompletedPids = new Set();
-let prevReadyPids = new Set();
-
 // --- INIT ---
 renderList();
 resetSim();
@@ -181,16 +176,9 @@ function resetSim() {
   playing = false;
   clearInterval(playTimer);
   
-  // 1. Reset the time and calculate the new schedule FIRST
   currentTime = 0;
   calculateSchedule();
   
-  // 2. Reset the animation tracking
-  prevRunningPid = null;
-  prevCompletedPids.clear();
-  prevReadyPids.clear();
-  
-  // 3. Reset all the UI elements
   document.getElementById('sys-time').innerText = `T+00ms`;
   document.getElementById('cpu-zone').classList.remove('processing');
   document.getElementById('cpu-process').innerHTML = '<span class="idle-chip">IDLE</span>';
@@ -215,8 +203,6 @@ function resetSim() {
   document.getElementById('m-thru').innerHTML = `0.00<small>p/ms</small>`;
 
   updateUI();
-  
-  // 4. Update the button text at the VERY END
   updatePlayButton(); 
 }
 
@@ -236,7 +222,7 @@ function togglePlayback() {
       }
       currentTime++;
       updateUI();
-    }, 500); 
+    }, 600); 
   }
   updatePlayButton();
 }
@@ -266,9 +252,9 @@ function updatePlayButton() {
   }
 }
 
-function createProcessNode(p, active = false, compact = false, animate = false) {
+function createProcessNode(p, active = false, compact = false) {
   return `
-    <div class="process-node process-${p.color} ${active ? 'is-active' : ''} ${compact ? 'is-compact' : ''} ${animate ? 'animate-slide' : ''}">
+    <div class="process-node process-${p.color} ${active ? 'is-active' : ''} ${compact ? 'is-compact' : ''}">
       <span class="node-dot"></span>
       <strong>${p.pid}</strong>
       ${!compact ? `<span>${p.burst}ms</span>` : ''}
@@ -278,6 +264,13 @@ function createProcessNode(p, active = false, compact = false, animate = false) 
 
 function updateUI() {
   if (currentTime > maxTime) currentTime = maxTime;
+
+  // --- 1. RECORD OLD POSITIONS BEFORE RENDER ---
+  const oldRects = {};
+  document.querySelectorAll('.process-node').forEach(node => {
+    const pid = node.querySelector('strong').innerText;
+    oldRects[pid] = node.getBoundingClientRect();
+  });
 
   document.getElementById('sys-time').innerText = `T+${currentTime.toString().padStart(2, '0')}ms`;
 
@@ -289,41 +282,24 @@ function updateUI() {
   const ready = arrived.filter(p => !completed.includes(p) && p.pid !== runningPid);
   const current = processes.find(p => p.pid === runningPid);
 
-  // --- DETERMINE WHICH NODES ARE NEW ---
-  const isNewToCpu = runningPid && runningPid !== prevRunningPid;
-  const newlyCompleted = completed.filter(p => !prevCompletedPids.has(p.pid));
-  const newlyReady = ready.filter(p => !prevReadyPids.has(p.pid));
-
-  // Update previous state for the next tick
-  prevRunningPid = runningPid;
-  completed.forEach(p => prevCompletedPids.add(p.pid));
-  prevReadyPids = new Set(ready.map(p => p.pid));
-
-  // --- RENDER QUEUES WITH ANIMATIONS ---
+  // --- 2. RENDER DOM (Teleportation happens here) ---
   document.getElementById('rq-count').innerText = `${ready.length} WAITING`;
   document.getElementById('ready-queue').innerHTML = ready.length 
-    ? ready.map(p => {
-        const animate = newlyReady.includes(p);
-        return createProcessNode(p, false, false, animate);
-      }).join('') 
+    ? ready.map(p => createProcessNode(p)).join('') 
     : '<span class="empty-label">Queue empty</span>';
 
   document.getElementById('cq-count').innerText = `${completed.length} DONE`;
   document.getElementById('completed-queue').innerHTML = completed.length 
-    ? completed.map(p => {
-        const animate = newlyCompleted.includes(p);
-        return createProcessNode(p, false, false, animate);
-      }).join('') 
+    ? completed.map(p => createProcessNode(p)).join('') 
     : '<span class="empty-label">No completed tasks</span>';
 
-  // --- RENDER CPU WITH ANIMATION ---
   const cpuZone = document.getElementById('cpu-zone');
   const cpuProc = document.getElementById('cpu-process');
   const cpuStatus = document.getElementById('cpu-status');
 
   if (current && runningPid !== 'IDLE') {
     cpuZone.classList.add('processing');
-    cpuProc.innerHTML = createProcessNode(current, true, true, isNewToCpu);
+    cpuProc.innerHTML = createProcessNode(current, true, true);
     cpuStatus.innerText = `EXECUTING ${current.pid}`;
   } else {
     cpuZone.classList.remove('processing');
@@ -331,7 +307,42 @@ function updateUI() {
     cpuStatus.innerText = 'AWAITING PROCESS';
   }
 
-  // Update Gantt Chart
+  // --- 3. ANIMATE THE NEW DOM ELEMENTS FROM OLD POSITIONS ---
+  document.querySelectorAll('.process-node').forEach(node => {
+    const pid = node.querySelector('strong').innerText;
+    const newRect = node.getBoundingClientRect();
+    const oldRect = oldRects[pid];
+
+    if (oldRect) {
+      // Calculate how far it moved
+      const dx = oldRect.left - newRect.left;
+      const dy = oldRect.top - newRect.top;
+
+      // If it moved a significant distance, animate the slide
+      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+        node.animate([
+          { transform: `translate(${dx}px, ${dy}px)`, zIndex: node.classList.contains('is-active') ? 200 : 100 },
+          { transform: 'translate(0, 0)', zIndex: node.classList.contains('is-active') ? 200 : 100 }
+        ], {
+          duration: 500,
+          easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
+          fill: 'none'
+        });
+      }
+    } else {
+      // It's completely new (e.g. arrived from outside), fade it in
+      node.animate([
+        { opacity: 0, transform: 'translateX(-30px) scale(0.9)' },
+        { opacity: 1, transform: 'translateX(0) scale(1)' }
+      ], {
+        duration: 400,
+        easing: 'ease-out',
+        fill: 'none'
+      });
+    }
+  });
+
+  // --- 4. UPDATE GANTT & MATRIX ---
   const ganttBars = document.getElementById('gantt-bars');
   if (currentTime === 0) {
     ganttBars.innerHTML = '<span class="timeline-empty">Timeline waiting for execution data</span>';
@@ -353,7 +364,6 @@ function updateUI() {
     }).join('');
   }
 
-  // --- UPDATE BLENDED MATRIX TABLE ---
   const matrixBody = document.querySelector('#execution-matrix tbody');
   if (matrixBody) {
     matrixBody.innerHTML = processes.map(p => {
@@ -383,7 +393,6 @@ function updateUI() {
     }).join('');
   }
 
-  // Update Metrics
   let totalWt = 0, totalTat = 0, doneCount = 0;
   processes.forEach(p => {
     if (metrics[p.pid] && currentTime >= metrics[p.pid].ct) {
