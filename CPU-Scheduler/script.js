@@ -13,9 +13,17 @@ let playing = false;
 let playTimer = null;
 let metrics = {};
 
+let prevRunningPid = null;
+let prevCompletedPids = new Set();
+let prevReadyPids = new Set();
+
+let fwCanvas, fwCtx, particles = [];
+let lastCompletedCount = 0;
+
 // --- INIT ---
 renderList();
 resetSim();
+initFireworks();
 
 function handleAlgoChange() {
   const algo = document.getElementById('algo').value;
@@ -53,15 +61,25 @@ function addProcess(e) {
   resetSim();
 }
 
+function removeProcess(index) {
+  processes.splice(index, 1);
+  renderList();
+  
+  const procCount = document.getElementById('proc-count');
+  if (procCount) procCount.innerText = processes.length;
+  
+  resetSim();
+}
+
 function renderList() {
   const algo = document.getElementById('algo').value;
   const showQ = algo === 'MLQ';
   const container = document.getElementById('process-list-body');
   
-  document.querySelector('.list-header').style.gridTemplateColumns = showQ ? '1fr 32px 32px 32px' : '1fr 32px 32px';
+  document.querySelector('.list-header').style.gridTemplateColumns = showQ ? '1fr 32px 32px 32px 32px' : '1fr 32px 32px 32px';
   
-  container.innerHTML = processes.slice(0, 8).map(p => `
-    <div class="list-row" style="grid-template-columns: ${showQ ? '1fr 32px 32px 32px' : '1fr 32px 32px'};">
+  container.innerHTML = processes.slice(0, 8).map((p, index) => `
+    <div class="list-row" style="grid-template-columns: ${showQ ? '1fr 32px 32px 32px 32px' : '1fr 32px 32px 32px'}; align-items: center;">
       <div>
         <span class="mini-dot process-${p.color}"></span>
         <strong>${p.pid}</strong>
@@ -69,6 +87,7 @@ function renderList() {
       <span>${p.arrival}</span>
       <span>${p.burst}</span>
       ${showQ ? `<span>${p.queue}</span>` : ''}
+      <button class="btn-delete-row" onclick="removeProcess(${index})" title="Remove process">×</button>
     </div>
   `).join('');
 }
@@ -85,7 +104,6 @@ function calculateSchedule() {
   if (n === 0) { timeline = []; maxTime = 0; return; }
 
   while (done < n) {
-    // ROUND ROBIN
     if (algo === 'RR') {
       list.filter(p => !p.comp && !p.inQueue && p.arrival <= time).forEach(p => {
         p.inQueue = true;
@@ -118,7 +136,6 @@ function calculateSchedule() {
       continue;
     }
 
-    // OTHERS
     let avail = list.filter(p => !p.comp && p.arrival <= time);
     if (avail.length === 0) { tl.push({ pid: 'IDLE', start: time, end: time + 1 }); time++; continue; }
 
@@ -172,12 +189,44 @@ function calculateSchedule() {
   maxTime = time;
 }
 
+function initGanttBars() {
+  const ganttBars = document.getElementById('gantt-bars');
+  if (!ganttBars) return;
+
+  if (timeline.length === 0) {
+    ganttBars.innerHTML = '<span class="timeline-empty">Timeline waiting for execution data</span>';
+    return;
+  }
+
+  ganttBars.innerHTML = timeline.map((b, index) => {
+    const isIdle = b.pid === 'IDLE';
+    const p = processes.find(x => x.pid === b.pid);
+    const colorClass = p ? `process-${p.color}` : '';
+    const duration = b.end - b.start;
+
+    return `
+      <div class="gantt-bar ${colorClass}" id="gantt-bar-${index}" data-index="${index}" style="width: 0%; display: none;">
+        <span class="gantt-pid">${b.pid}</span>
+        <div class="gantt-status-wrap" id="gantt-status-${index}"></div>
+        <small class="gantt-time">${isIdle ? 'idle' : duration + 'ms'}</small>
+      </div>
+    `;
+  }).join('');
+}
+
 function resetSim() {
   playing = false;
   clearInterval(playTimer);
   
   currentTime = 0;
+  lastCompletedCount = 0;
+  particles = [];
   calculateSchedule();
+  initGanttBars();
+  
+  prevRunningPid = null;
+  prevCompletedPids.clear();
+  prevReadyPids.clear();
   
   document.getElementById('sys-time').innerText = `T+00ms`;
   document.getElementById('cpu-zone').classList.remove('processing');
@@ -185,14 +234,17 @@ function resetSim() {
   document.getElementById('cpu-status').innerText = 'AWAITING PROCESS';
   document.getElementById('ready-queue').innerHTML = '<span class="empty-label">Queue empty</span>';
   document.getElementById('completed-queue').innerHTML = '<span class="empty-label">No completed tasks</span>';
-  document.getElementById('gantt-bars').innerHTML = '<span class="timeline-empty">Timeline waiting for execution data</span>';
   
   const ticks = document.getElementById('gantt-ticks');
   ticks.innerHTML = '';
+  ticks.style.position = 'relative';
+  ticks.style.height = '24px';
+  ticks.style.width = '100%';
   if (maxTime > 0) {
     for (let i = 0; i <= maxTime; i++) {
-      if (i === 0 || i === maxTime || i % Math.ceil(maxTime/7) === 0) {
-        ticks.innerHTML += `<span>${i}ms</span>`;
+      if (maxTime <= 12 || i % 2 === 0 || i === maxTime) {
+        const pct = (i / maxTime) * 100;
+        ticks.innerHTML += `<span style="position: absolute; left: ${pct}%; transform: translateX(-50%); white-space: nowrap; font-size: 10px; color: #aaaaaa;">${i}ms</span>`;
       }
     }
   }
@@ -222,7 +274,7 @@ function togglePlayback() {
       }
       currentTime++;
       updateUI();
-    }, 600); 
+    }, 500); 
   }
   updatePlayButton();
 }
@@ -252,9 +304,9 @@ function updatePlayButton() {
   }
 }
 
-function createProcessNode(p, active = false, compact = false) {
+function createProcessNode(p, active = false, compact = false, animate = false) {
   return `
-    <div class="process-node process-${p.color} ${active ? 'is-active' : ''} ${compact ? 'is-compact' : ''}">
+    <div class="process-node process-${p.color} ${active ? 'is-active' : ''} ${compact ? 'is-compact' : ''} ${animate ? 'animate-slide' : ''}">
       <span class="node-dot"></span>
       <strong>${p.pid}</strong>
       ${!compact ? `<span>${p.burst}ms</span>` : ''}
@@ -262,15 +314,63 @@ function createProcessNode(p, active = false, compact = false) {
   `;
 }
 
+// --- PIXEL FIREWORKS CANVAS ENGINE ---
+function initFireworks() {
+  fwCanvas = document.getElementById('fireworks-canvas');
+  if (!fwCanvas) return;
+  fwCtx = fwCanvas.getContext('2d');
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+  requestAnimationFrame(updateFireworks);
+}
+
+function resizeCanvas() {
+  if (!fwCanvas) return;
+  fwCanvas.width = fwCanvas.offsetWidth;
+  fwCanvas.height = fwCanvas.offsetHeight;
+}
+
+function triggerFireworksBurst() {
+  if (!fwCanvas || !fwCtx) return;
+  const cx = fwCanvas.width / 2;
+  const cy = fwCanvas.height / 2;
+  
+  for (let i = 0; i < 40; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = Math.random() * 4 + 1;
+    particles.push({
+      x: cx,
+      y: cy,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      alpha: 1.0,
+      decay: Math.random() * 0.02 + 0.015
+    });
+  }
+}
+
+function updateFireworks() {
+  if (!fwCtx || !fwCanvas) return;
+  fwCtx.clearRect(0, 0, fwCanvas.width, fwCanvas.height);
+
+  particles.forEach((p, index) => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.alpha -= p.decay;
+
+    if (p.alpha <= 0) {
+      particles.splice(index, 1);
+    } else {
+      fwCtx.fillStyle = `rgba(255, 255, 255, ${p.alpha})`;
+      fwCtx.fillRect(Math.floor(p.x), Math.floor(p.y), 3, 3);
+    }
+  });
+
+  requestAnimationFrame(updateFireworks);
+}
+
 function updateUI() {
   if (currentTime > maxTime) currentTime = maxTime;
-
-  // --- 1. RECORD OLD POSITIONS BEFORE RENDER ---
-  const oldRects = {};
-  document.querySelectorAll('.process-node').forEach(node => {
-    const pid = node.querySelector('strong').innerText;
-    oldRects[pid] = node.getBoundingClientRect();
-  });
 
   document.getElementById('sys-time').innerText = `T+${currentTime.toString().padStart(2, '0')}ms`;
 
@@ -282,88 +382,112 @@ function updateUI() {
   const ready = arrived.filter(p => !completed.includes(p) && p.pid !== runningPid);
   const current = processes.find(p => p.pid === runningPid);
 
-  // --- 2. RENDER DOM (Teleportation happens here) ---
+  if (completed.length > lastCompletedCount) {
+    triggerFireworksBurst();
+    lastCompletedCount = completed.length;
+  }
+
+  const isNewToCpu = runningPid && runningPid !== prevRunningPid;
+  const newlyCompleted = completed.filter(p => !prevCompletedPids.has(p.pid));
+  const newlyReady = ready.filter(p => !prevReadyPids.has(p.pid));
+
+  prevRunningPid = runningPid;
+  completed.forEach(p => prevCompletedPids.add(p.pid));
+  prevReadyPids = new Set(ready.map(p => p.pid));
+
+  // Update Queues
   document.getElementById('rq-count').innerText = `${ready.length} WAITING`;
   document.getElementById('ready-queue').innerHTML = ready.length 
-    ? ready.map(p => createProcessNode(p)).join('') 
+    ? ready.map(p => createProcessNode(p, false, false, newlyReady.includes(p))).join('') 
     : '<span class="empty-label">Queue empty</span>';
 
   document.getElementById('cq-count').innerText = `${completed.length} DONE`;
   document.getElementById('completed-queue').innerHTML = completed.length 
-    ? completed.map(p => createProcessNode(p)).join('') 
+    ? completed.map(p => createProcessNode(p, false, false, newlyCompleted.includes(p))).join('') 
     : '<span class="empty-label">No completed tasks</span>';
 
+  // Update CPU
   const cpuZone = document.getElementById('cpu-zone');
   const cpuProc = document.getElementById('cpu-process');
   const cpuStatus = document.getElementById('cpu-status');
+  const dinoContainer = document.getElementById('cpu-dino-container');
 
   if (current && runningPid !== 'IDLE') {
     cpuZone.classList.add('processing');
     cpuProc.innerHTML = createProcessNode(current, true, true);
     cpuStatus.innerText = `EXECUTING ${current.pid}`;
+    if (dinoContainer) {
+      dinoContainer.innerHTML = `<img src="dino.gif" style="height: 38px; width: auto; image-rendering: pixelated; mix-blend-mode: screen; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.9));" alt="Running Dino" />`;
+    }
   } else {
     cpuZone.classList.remove('processing');
     cpuProc.innerHTML = '<span class="idle-chip">IDLE</span>';
     cpuStatus.innerText = 'AWAITING PROCESS';
+    if (dinoContainer) {
+      dinoContainer.innerHTML = `<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="2" /><path d="M9 1v3m6-3v3M9 20v3m6-3v3M20 9h3m-3 6h3M1 9h3m-3 6h3" /></svg>`;
+    }
   }
 
-  // --- 3. ANIMATE THE NEW DOM ELEMENTS FROM OLD POSITIONS ---
-  document.querySelectorAll('.process-node').forEach(node => {
-    const pid = node.querySelector('strong').innerText;
-    const newRect = node.getBoundingClientRect();
-    const oldRect = oldRects[pid];
-
-    if (oldRect) {
-      // Calculate how far it moved
-      const dx = oldRect.left - newRect.left;
-      const dy = oldRect.top - newRect.top;
-
-      // If it moved a significant distance, animate the slide
-      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-        node.animate([
-          { transform: `translate(${dx}px, ${dy}px)`, zIndex: node.classList.contains('is-active') ? 200 : 100 },
-          { transform: 'translate(0, 0)', zIndex: node.classList.contains('is-active') ? 200 : 100 }
-        ], {
-          duration: 500,
-          easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
-          fill: 'none'
-        });
-      }
+  // Update Gantt Chart with smooth expansion and clean overflow handling
+  const ganttBars = document.getElementById('gantt-bars');
+  if (ganttBars) {
+    if (currentTime === 0) {
+      timeline.forEach((b, index) => {
+        const bar = document.getElementById(`gantt-bar-${index}`);
+        if (bar) {
+          bar.style.width = '0%';
+          bar.style.display = 'none';
+          bar.classList.remove('running');
+        }
+      });
     } else {
-      // It's completely new (e.g. arrived from outside), fade it in
-      node.animate([
-        { opacity: 0, transform: 'translateX(-30px) scale(0.9)' },
-        { opacity: 1, transform: 'translateX(0) scale(1)' }
-      ], {
-        duration: 400,
-        easing: 'ease-out',
-        fill: 'none'
+      if (ganttBars.querySelector('.timeline-empty')) {
+        initGanttBars();
+      }
+
+      timeline.forEach((b, index) => {
+        const bar = document.getElementById(`gantt-bar-${index}`);
+        const statusWrap = document.getElementById(`gantt-status-${index}`);
+        if (!bar) return;
+
+        if (currentTime <= b.start) {
+          bar.style.width = '0%';
+          bar.style.display = 'none';
+          bar.classList.remove('running');
+        } else {
+          const widthPct = ((Math.min(b.end, currentTime) - b.start) / maxTime) * 100;
+          bar.style.display = 'flex';
+          bar.style.width = `${widthPct}%`;
+
+          const isIdle = b.pid === 'IDLE';
+          const isRunning = !isIdle && currentTime < b.end;
+          const isFinished = !isIdle && currentTime >= b.end;
+
+          if (isRunning) {
+            bar.classList.add('running');
+            if (statusWrap && statusWrap.getAttribute('data-state') !== 'running') {
+              statusWrap.setAttribute('data-state', 'running');
+              statusWrap.innerHTML = `<img src="dino.gif" class="gantt-dino-gif" alt="Running Dino" />`;
+            }
+          } else if (isFinished) {
+            bar.classList.remove('running');
+            if (statusWrap && statusWrap.getAttribute('data-state') !== 'finished') {
+              statusWrap.setAttribute('data-state', 'finished');
+              statusWrap.innerHTML = `<span class="badge-finished">Processing Over</span>`;
+            }
+          } else {
+            bar.classList.remove('running');
+            if (statusWrap) {
+              statusWrap.setAttribute('data-state', 'idle');
+              statusWrap.innerHTML = '';
+            }
+          }
+        }
       });
     }
-  });
-
-  // --- 4. UPDATE GANTT & MATRIX ---
-  const ganttBars = document.getElementById('gantt-bars');
-  if (currentTime === 0) {
-    ganttBars.innerHTML = '<span class="timeline-empty">Timeline waiting for execution data</span>';
-  } else {
-    ganttBars.innerHTML = timeline.map(b => {
-      if (b.start >= currentTime) return '';
-      
-      const widthPct = ((Math.min(b.end, currentTime) - b.start) / maxTime) * 100;
-      const isIdle = b.pid === 'IDLE';
-      const p = processes.find(x => x.pid === b.pid);
-      const colorClass = p ? `process-${p.color}` : '';
-      
-      return `
-        <div class="gantt-bar ${colorClass} ${!isIdle && b.end > currentTime ? 'running' : ''}" style="width: ${widthPct}%; margin-right: 2px;">
-          <span>${b.pid}</span>
-          <small>${isIdle ? 'idle' : (b.end > currentTime ? 'running' : (b.end - b.start) + 'ms')}</small>
-        </div>
-      `;
-    }).join('');
   }
 
+  // --- UPDATE BLENDED MATRIX TABLE ---
   const matrixBody = document.querySelector('#execution-matrix tbody');
   if (matrixBody) {
     matrixBody.innerHTML = processes.map(p => {
@@ -380,7 +504,7 @@ function updateUI() {
           <td>
             <div class="pid-cell process-${p.color}">
               <span class="mini-dot" style="background: currentColor;"></span>
-              <span style="color: #edeefe;">${p.pid}</span>
+              <span style="color: #ffffff;">${p.pid}</span>
             </div>
           </td>
           <td>${p.arrival}</td>
@@ -393,6 +517,7 @@ function updateUI() {
     }).join('');
   }
 
+  // Update Metrics
   let totalWt = 0, totalTat = 0, doneCount = 0;
   processes.forEach(p => {
     if (metrics[p.pid] && currentTime >= metrics[p.pid].ct) {
