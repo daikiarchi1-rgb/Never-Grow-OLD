@@ -220,3 +220,13 @@ table#execution-matrix tr.pending-row td { color: #666666; }
   .arena { grid-template-columns: minmax(185px, 1fr) 32px 150px 32px minmax(170px, 0.9fr); padding: 18px; }
   .cpu-rings { width: 120px; height: 120px; }
 }
+
+/* Add this to the bottom of style.css */
+.badge-finished {
+  opacity: 0; /* Hide text by default */
+  transition: opacity 0.2s;
+}
+
+.gantt-bar:hover .badge-finished {
+  opacity: 1; /* Show text on hover */
+}
