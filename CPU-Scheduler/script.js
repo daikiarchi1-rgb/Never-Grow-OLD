@@ -1,9 +1,9 @@
 const colorOrder = ["violet", "cyan", "blue", "rose", "amber"];
 let processes = [
   { pid: "P1", arrival: 0, burst: 4, queue: 1, color: "violet" },
-  { pid: "P2", arrival: 1, burst: 3, queue: 1, color: "cyan" },
-  { pid: "P3", arrival: 2, burst: 2, queue: 2, color: "blue" },
-  { pid: "P4", arrival: 3, burst: 5, queue: 2, color: "rose" },
+  { pid: "P2", arrival: 2, burst: 8, queue: 1, color: "cyan" },
+  { pid: "P3", arrival: 9, burst: 12, queue: 1, color: "blue" },
+  { pid: "P4", arrival: 20, burst: 15, queue: 1, color: "rose" },
 ];
 
 let timeline = [];
@@ -80,32 +80,48 @@ function removeProcess(index) {
   resetSim();
 }
 
+// Editable Inputs in List
 function renderList() {
   const algo = document.getElementById('algo').value;
   const showQ = algo === 'MLQ';
   const container = document.getElementById('process-list-body');
   
-  document.querySelector('.list-header').style.gridTemplateColumns = showQ ? '1fr 32px 32px 32px 32px' : '1fr 32px 32px 32px';
+  document.querySelector('.list-header').style.gridTemplateColumns = showQ ? '1fr 36px 36px 36px 20px' : '1fr 36px 36px 20px';
   
   container.innerHTML = processes.slice(0, 8).map((p, index) => `
-    <div class="list-row" style="grid-template-columns: ${showQ ? '1fr 32px 32px 32px 32px' : '1fr 32px 32px 32px'}; align-items: center;">
+    <div class="list-row" style="grid-template-columns: ${showQ ? '1fr 36px 36px 36px 20px' : '1fr 36px 36px 20px'}; align-items: center;">
       <div>
         <span class="mini-dot process-${p.color}"></span>
-        <strong>${p.pid}</strong>
+        <strong style="font-size: 10px;">${p.pid}</strong>
       </div>
-      <span>${p.arrival}</span>
-      <span>${p.burst}</span>
-      ${showQ ? `<span>${p.queue}</span>` : ''}
+      
+      <!-- Editable Inputs -->
+      <input type="number" min="0" value="${p.arrival}" onchange="updateProcessField(${index}, 'arrival', this.value)" class="inline-edit" />
+      <input type="number" min="1" value="${p.burst}" onchange="updateProcessField(${index}, 'burst', this.value)" class="inline-edit" />
+      
+      ${showQ ? `<input type="number" min="1" max="4" value="${p.queue}" onchange="updateProcessField(${index}, 'queue', this.value)" class="inline-edit" />` : ''}
+      
       <button class="btn-delete-row" onclick="removeProcess(${index})" title="Remove process">×</button>
     </div>
   `).join('');
+}
+
+function updateProcessField(index, field, value) {
+  const val = parseInt(value);
+  if (isNaN(val)) return;
+  
+  if (field === 'arrival') processes[index].arrival = Math.max(0, val);
+  if (field === 'burst') processes[index].burst = Math.max(1, val);
+  if (field === 'queue') processes[index].queue = Math.max(1, Math.min(4, val));
+  
+  resetSim();
 }
 
 function calculateSchedule() {
   const algo = document.getElementById('algo').value;
   const quantum = parseInt(document.getElementById('in-quantum').value) || 2;
   
-  let list = processes.map(p => ({ ...p, rem: p.burst, comp: false, inQueue: false, firstRun: null })).sort((a,b) => a.arrival - b.arrival || a.pid.localeCompare(b.pid));
+  let list = processes.map(p => ({ ...p, rem: p.burst, comp: false, inQueue: false, firstRun: null, lastRun: null })).sort((a,b) => a.arrival - b.arrival || a.pid.localeCompare(b.pid));
   let time = 0, tl = [], done = 0, n = list.length;
   let rrQueue = [];
   
@@ -119,7 +135,7 @@ function calculateSchedule() {
       });
       if (rrQueue.length === 0) { tl.push({ pid: 'IDLE', start: time, end: time + 1 }); time++; continue; }
       let curr = rrQueue.shift();
-      if (curr.firstRun === null) curr.firstRun = time; // Track RT
+      if (curr.firstRun === null) curr.firstRun = time;
       
       let run = Math.min(curr.rem, quantum);
       tl.push({ pid: curr.pid, start: time, end: time + run });
@@ -157,21 +173,21 @@ function calculateSchedule() {
       let q4Avail = avail.filter(p => p.queue === 4);
 
       if (q1Avail.length > 0) {
-        if (q1Algo === 'FCFS') q1Avail.sort((a,b) => a.arrival - b.arrival); else if (q1Algo === 'SJF') q1Avail.sort((a,b) => a.burst - b.burst); else if (q1Algo === 'SRTF') q1Avail.sort((a,b) => a.rem - b.rem); else q1Avail.sort((a,b) => a.arrival - b.arrival);
+        if (q1Algo === 'FCFS') q1Avail.sort((a,b) => a.arrival - b.arrival); else if (q1Algo === 'SJF') q1Avail.sort((a,b) => a.burst - b.burst); else if (q1Algo === 'SRTF') q1Avail.sort((a,b) => a.rem - b.rem); else if (q1Algo === 'RR') q1Avail.sort((a,b) => (a.lastRun ?? a.arrival) - (b.lastRun ?? b.arrival));
         curr = q1Avail[0];
       } else if (q2Avail.length > 0) {
-        if (q2Algo === 'FCFS') q2Avail.sort((a,b) => a.arrival - b.arrival); else if (q2Algo === 'SJF') q2Avail.sort((a,b) => a.burst - b.burst); else if (q2Algo === 'SRTF') q2Avail.sort((a,b) => a.rem - b.rem); else q2Avail.sort((a,b) => a.arrival - b.arrival);
+        if (q2Algo === 'FCFS') q2Avail.sort((a,b) => a.arrival - b.arrival); else if (q2Algo === 'SJF') q2Avail.sort((a,b) => a.burst - b.burst); else if (q2Algo === 'SRTF') q2Avail.sort((a,b) => a.rem - b.rem); else if (q2Algo === 'RR') q2Avail.sort((a,b) => (a.lastRun ?? a.arrival) - (b.lastRun ?? b.arrival));
         curr = q2Avail[0];
       } else if (q3Avail.length > 0) {
-        if (q3Algo === 'FCFS') q3Avail.sort((a,b) => a.arrival - b.arrival); else if (q3Algo === 'SJF') q3Avail.sort((a,b) => a.burst - b.burst); else if (q3Algo === 'SRTF') q3Avail.sort((a,b) => a.rem - b.rem); else q3Avail.sort((a,b) => a.arrival - b.arrival);
+        if (q3Algo === 'FCFS') q3Avail.sort((a,b) => a.arrival - b.arrival); else if (q3Algo === 'SJF') q3Avail.sort((a,b) => a.burst - b.burst); else if (q3Algo === 'SRTF') q3Avail.sort((a,b) => a.rem - b.rem); else if (q3Algo === 'RR') q3Avail.sort((a,b) => (a.lastRun ?? a.arrival) - (b.lastRun ?? b.arrival));
         curr = q3Avail[0];
       } else if (q4Avail.length > 0) {
-        if (q4Algo === 'FCFS') q4Avail.sort((a,b) => a.arrival - b.arrival); else if (q4Algo === 'SJF') q4Avail.sort((a,b) => a.burst - b.burst); else if (q4Algo === 'SRTF') q4Avail.sort((a,b) => a.rem - b.rem); else q4Avail.sort((a,b) => a.arrival - b.arrival);
+        if (q4Algo === 'FCFS') q4Avail.sort((a,b) => a.arrival - b.arrival); else if (q4Algo === 'SJF') q4Avail.sort((a,b) => a.burst - b.burst); else if (q4Algo === 'SRTF') q4Avail.sort((a,b) => a.rem - b.rem); else if (q4Algo === 'RR') q4Avail.sort((a,b) => (a.lastRun ?? a.arrival) - (b.lastRun ?? b.arrival));
         curr = q4Avail[0];
       }
     }
 
-    if (curr.firstRun === null) curr.firstRun = time; // Track RT
+    if (curr.firstRun === null) curr.firstRun = time;
 
     let run = 1;
     if (algo === 'FCFS' || algo === 'SJF') run = curr.rem;
@@ -212,18 +228,24 @@ function calculateSchedule() {
 
     tl.push({ pid: curr.pid, start: time, end: time + run });
     time += run; curr.rem -= run;
+    
     if (curr.rem === 0) {
       curr.comp = true; 
       metrics[curr.pid] = { ct: time, tat: time - curr.arrival, wt: time - curr.arrival - curr.burst, rt: curr.firstRun - curr.arrival }; 
       done++;
+    } else {
+      if (algo === 'MLQ') {
+        let qAlgo = '';
+        if (curr.queue === 1) qAlgo = document.getElementById('mlq-q1-algo').value;
+        else if (curr.queue === 2) qAlgo = document.getElementById('mlq-q2-algo').value;
+        else if (curr.queue === 3) qAlgo = document.getElementById('mlq-q3-algo').value;
+        else if (curr.queue === 4) qAlgo = document.getElementById('mlq-q4-algo').value;
+        if (qAlgo === 'RR') curr.lastRun = time;
+      }
     }
   }
 
-  timeline = [];
-  for (let b of tl) {
-    if (timeline.length > 0 && timeline[timeline.length-1].pid === b.pid && timeline[timeline.length-1].end === b.start) timeline[timeline.length-1].end = b.end;
-    else timeline.push(b);
-  }
+  timeline = tl;
   maxTime = time;
 }
 
@@ -240,13 +262,11 @@ function initGanttBars() {
     const isIdle = b.pid === 'IDLE';
     const p = processes.find(x => x.pid === b.pid);
     const colorClass = p ? `process-${p.color}` : '';
-    const duration = b.end - b.start;
 
+    // ONLY the PID is inside the block now
     return `
       <div class="gantt-bar ${colorClass}" id="gantt-bar-${index}" data-index="${index}" style="width: 0%; display: none;">
         <span class="gantt-pid">${b.pid}</span>
-        <div class="gantt-status-wrap" id="gantt-status-${index}"></div>
-        <small class="gantt-time">${isIdle ? 'idle' : duration + 'ms'}</small>
       </div>
     `;
   }).join('');
@@ -278,18 +298,25 @@ function resetSim() {
   
   document.getElementById('completed-queue').innerHTML = '<span class="empty-label">No completed tasks</span>';
   
+  // REPLACED TICK LOGIC: Place the MS at the EXACT stop time of every block
   const ticks = document.getElementById('gantt-ticks');
   ticks.innerHTML = '';
   ticks.style.position = 'relative';
   ticks.style.height = '24px';
   ticks.style.width = '100%';
+  
   if (maxTime > 0) {
-    for (let i = 0; i <= maxTime; i++) {
-      if (maxTime <= 12 || i % 2 === 0 || i === maxTime) {
-        const pct = (i / maxTime) * 100;
-        ticks.innerHTML += `<span style="position: absolute; left: ${pct}%; transform: translateX(-50%); white-space: nowrap; font-size: 10px; color: #aaaaaa;">${i}ms</span>`;
-      }
-    }
+    let uniqueTimes = new Set();
+    timeline.forEach(b => {
+        uniqueTimes.add(b.start);
+        uniqueTimes.add(b.end);
+    });
+    const sortedTimes = Array.from(uniqueTimes).sort((a,b)=>a-b);
+    
+    sortedTimes.forEach(t => {
+        const pct = (t / maxTime) * 100;
+        ticks.innerHTML += `<span style="position: absolute; left: ${pct}%; transform: translateX(-50%); white-space: nowrap; font-size: 10px; color: #aaaaaa;">${t}ms</span>`;
+    });
   }
 
   document.getElementById('m-wait').innerHTML = `0.00<small>ms</small>`;
@@ -489,54 +516,32 @@ function updateUI() {
     }
   }
 
-  // Update Gantt Chart with smooth expansion
+  // Update Gantt Chart
   const ganttBars = document.getElementById('gantt-bars');
   if (ganttBars) {
     if (currentTime === 0) {
       timeline.forEach((b, index) => {
         const bar = document.getElementById(`gantt-bar-${index}`);
-        if (bar) { bar.style.width = '0%'; bar.style.display = 'none'; bar.classList.remove('running'); }
+        if (bar) { bar.style.width = '0%'; bar.style.display = 'none'; }
       });
     } else {
       if (ganttBars.querySelector('.timeline-empty')) initGanttBars();
 
       timeline.forEach((b, index) => {
         const bar = document.getElementById(`gantt-bar-${index}`);
-        const statusWrap = document.getElementById(`gantt-status-${index}`);
         if (!bar) return;
 
         if (currentTime <= b.start) {
-          bar.style.width = '0%'; bar.style.display = 'none'; bar.classList.remove('running');
+          bar.style.width = '0%'; bar.style.display = 'none';
         } else {
           const widthPct = ((Math.min(b.end, currentTime) - b.start) / maxTime) * 100;
           bar.style.display = 'flex'; bar.style.width = `${widthPct}%`;
-
-          const isIdle = b.pid === 'IDLE';
-          const isRunning = !isIdle && currentTime < b.end;
-          const isFinished = !isIdle && currentTime >= b.end;
-
-          if (isRunning) {
-            bar.classList.add('running');
-            if (statusWrap && statusWrap.getAttribute('data-state') !== 'running') {
-              statusWrap.setAttribute('data-state', 'running');
-              statusWrap.innerHTML = `<img src="dino.gif" class="gantt-dino-gif" alt="Running Dino" />`;
-            }
-          } else if (isFinished) {
-            bar.classList.remove('running');
-            if (statusWrap && statusWrap.getAttribute('data-state') !== 'finished') {
-              statusWrap.setAttribute('data-state', 'finished');
-              statusWrap.innerHTML = `<span class="badge-finished">Processing Over</span>`;
-            }
-          } else {
-            bar.classList.remove('running');
-            if (statusWrap) { statusWrap.setAttribute('data-state', 'idle'); statusWrap.innerHTML = ''; }
-          }
         }
       });
     }
   }
 
-  // --- UPDATE BLENDED MATRIX TABLE (ADDED RT) ---
+  // --- UPDATE BLENDED MATRIX TABLE ---
   const matrixBody = document.querySelector('#execution-matrix tbody');
   if (matrixBody) {
     matrixBody.innerHTML = processes.map(p => {
