@@ -1,9 +1,10 @@
 const colorOrder = ["violet", "cyan", "blue", "rose", "amber"];
 let processes = [
-  { pid: "P1", arrival: 0, burst: 4, queue: 1, color: "violet" },
-  { pid: "P2", arrival: 2, burst: 8, queue: 1, color: "cyan" },
-  { pid: "P3", arrival: 9, burst: 12, queue: 1, color: "blue" },
-  { pid: "P4", arrival: 20, burst: 15, queue: 1, color: "rose" },
+  { pid: "P1", arrival: 3, burst: 1, queue: 1, color: "violet" },
+  { pid: "P2", arrival: 5, burst: 6, queue: 1, color: "cyan" },
+  { pid: "P3", arrival: 8, burst: 4, queue: 1, color: "blue" },
+  { pid: "P4", arrival: 0, burst: 1, queue: 1, color: "rose" },
+  { pid: "P5", arrival: 12, burst: 6, queue: 1, color: "amber" },
 ];
 
 let timeline = [];
@@ -24,12 +25,13 @@ let lastCompletedCount = 0;
 renderList();
 resetSim();
 initFireworks();
+toggleMLQQuantum();
 
 function handleAlgoChange() {
   const algo = document.getElementById('algo').value;
   const isMLQ = algo === 'MLQ';
 
-  document.getElementById('quantum-wrap').style.display = (algo === 'RR' || isMLQ) ? 'block' : 'none';
+  document.getElementById('quantum-wrap').style.display = (algo === 'RR') ? 'block' : 'none';
   document.getElementById('queue-input-wrap').style.display = isMLQ ? 'grid' : 'none';
   document.getElementById('th-q').style.display = isMLQ ? 'block' : 'none';
   
@@ -39,8 +41,27 @@ function handleAlgoChange() {
   document.getElementById('q3-container').style.display = isMLQ ? 'flex' : 'none';
   document.getElementById('q4-label').innerText = isMLQ ? "Q4 (LOWEST)" : "READY QUEUE";
 
+  if (isMLQ) toggleMLQQuantum();
+
   renderList();
   resetSim();
+}
+
+// Disable the Quantum input if the queue's algorithm is not RR
+function toggleMLQQuantum() {
+  for (let i = 1; i <= 4; i++) {
+    const algoEl = document.getElementById(`mlq-q${i}-algo`);
+    const inputEl = document.getElementById(`mlq-q${i}-quantum`);
+    if (algoEl && inputEl) {
+      if (algoEl.value === 'RR') {
+        inputEl.disabled = false;
+        inputEl.style.opacity = '1';
+      } else {
+        inputEl.disabled = true;
+        inputEl.style.opacity = '0.3'; // Gray it out
+      }
+    }
+  }
 }
 
 function addProcess(e) {
@@ -119,7 +140,7 @@ function updateProcessField(index, field, value) {
 
 function calculateSchedule() {
   const algo = document.getElementById('algo').value;
-  const quantum = parseInt(document.getElementById('in-quantum').value) || 2;
+  const globalQuantum = parseInt(document.getElementById('in-quantum').value) || 2;
   
   let list = processes.map(p => ({ ...p, rem: p.burst, comp: false, inQueue: false, firstRun: null, lastRun: null })).sort((a,b) => a.arrival - b.arrival || a.pid.localeCompare(b.pid));
   let time = 0, tl = [], done = 0, n = list.length;
@@ -137,7 +158,7 @@ function calculateSchedule() {
       let curr = rrQueue.shift();
       if (curr.firstRun === null) curr.firstRun = time;
       
-      let run = Math.min(curr.rem, quantum);
+      let run = Math.min(curr.rem, globalQuantum);
       tl.push({ pid: curr.pid, start: time, end: time + run });
       time += run; curr.rem -= run;
       
@@ -172,6 +193,7 @@ function calculateSchedule() {
       let q3Avail = avail.filter(p => p.queue === 3);
       let q4Avail = avail.filter(p => p.queue === 4);
 
+      // lastRun is time + 0.01 so newly arrived processes always win the tie
       if (q1Avail.length > 0) {
         if (q1Algo === 'FCFS') q1Avail.sort((a,b) => a.arrival - b.arrival); else if (q1Algo === 'SJF') q1Avail.sort((a,b) => a.burst - b.burst); else if (q1Algo === 'SRTF') q1Avail.sort((a,b) => a.rem - b.rem); else if (q1Algo === 'RR') q1Avail.sort((a,b) => (a.lastRun ?? a.arrival) - (b.lastRun ?? b.arrival));
         curr = q1Avail[0];
@@ -200,6 +222,12 @@ function calculateSchedule() {
       const q3Algo = document.getElementById('mlq-q3-algo').value;
       const q4Algo = document.getElementById('mlq-q4-algo').value;
 
+      // Get specific Quantum for each queue
+      const q1Quantum = parseInt(document.getElementById('mlq-q1-quantum').value) || 2;
+      const q2Quantum = parseInt(document.getElementById('mlq-q2-quantum').value) || 4;
+      const q3Quantum = parseInt(document.getElementById('mlq-q3-quantum').value) || 8;
+      const q4Quantum = parseInt(document.getElementById('mlq-q4-quantum').value) || 16;
+
       let nextQ1Arr = list.filter(p => !p.comp && p.queue === 1 && p.arrival > time).reduce((min, p) => Math.min(min, p.arrival), Infinity);
       let nextQ2Arr = list.filter(p => !p.comp && p.queue === 2 && p.arrival > time).reduce((min, p) => Math.min(min, p.arrival), Infinity);
       let nextQ3Arr = list.filter(p => !p.comp && p.queue === 3 && p.arrival > time).reduce((min, p) => Math.min(min, p.arrival), Infinity);
@@ -207,22 +235,22 @@ function calculateSchedule() {
       if (curr.queue === 1) {
         if (q1Algo === 'FCFS' || q1Algo === 'SJF') run = curr.rem;
         else if (q1Algo === 'SRTF') { let nextArr = list.filter(p => !p.comp && p.arrival > time).reduce((min, p) => Math.min(min, p.arrival), Infinity); run = Math.min(curr.rem, nextArr - time); }
-        else if (q1Algo === 'RR') run = Math.min(curr.rem, quantum);
+        else if (q1Algo === 'RR') run = Math.min(curr.rem, q1Quantum); // Use Q1 Quantum
       } else if (curr.queue === 2) {
         let limit = nextQ1Arr - time;
         if (q2Algo === 'FCFS' || q2Algo === 'SJF') run = Math.min(curr.rem, limit);
         else if (q2Algo === 'SRTF') { let nextArr = list.filter(p => !p.comp && p.arrival > time).reduce((min, p) => Math.min(min, p.arrival), Infinity); run = Math.min(curr.rem, nextArr - time, limit); }
-        else if (q2Algo === 'RR') run = Math.min(curr.rem, quantum, limit);
+        else if (q2Algo === 'RR') run = Math.min(curr.rem, q2Quantum, limit); // Use Q2 Quantum
       } else if (curr.queue === 3) {
         let limit = Math.min(nextQ1Arr, nextQ2Arr) - time;
         if (q3Algo === 'FCFS' || q3Algo === 'SJF') run = Math.min(curr.rem, limit);
         else if (q3Algo === 'SRTF') { let nextArr = list.filter(p => !p.comp && p.arrival > time).reduce((min, p) => Math.min(min, p.arrival), Infinity); run = Math.min(curr.rem, nextArr - time, limit); }
-        else if (q3Algo === 'RR') run = Math.min(curr.rem, quantum, limit);
+        else if (q3Algo === 'RR') run = Math.min(curr.rem, q3Quantum, limit); // Use Q3 Quantum
       } else if (curr.queue === 4) {
         let limit = Math.min(nextQ1Arr, nextQ2Arr, nextQ3Arr) - time;
         if (q4Algo === 'FCFS' || q4Algo === 'SJF') run = Math.min(curr.rem, limit);
         else if (q4Algo === 'SRTF') { let nextArr = list.filter(p => !p.comp && p.arrival > time).reduce((min, p) => Math.min(min, p.arrival), Infinity); run = Math.min(curr.rem, nextArr - time, limit); }
-        else if (q4Algo === 'RR') run = Math.min(curr.rem, quantum, limit);
+        else if (q4Algo === 'RR') run = Math.min(curr.rem, q4Quantum, limit); // Use Q4 Quantum
       }
     }
 
@@ -240,7 +268,9 @@ function calculateSchedule() {
         else if (curr.queue === 2) qAlgo = document.getElementById('mlq-q2-algo').value;
         else if (curr.queue === 3) qAlgo = document.getElementById('mlq-q3-algo').value;
         else if (curr.queue === 4) qAlgo = document.getElementById('mlq-q4-algo').value;
-        if (qAlgo === 'RR') curr.lastRun = time;
+        
+        // ADD 0.01 TO LAST RUN TO FIX TIE-BREAKER
+        if (qAlgo === 'RR') curr.lastRun = time + 0.01;
       }
     }
   }
@@ -262,10 +292,22 @@ function initGanttBars() {
     const isIdle = b.pid === 'IDLE';
     const p = processes.find(x => x.pid === b.pid);
     const colorClass = p ? `process-${p.color}` : '';
+    const duration = b.end - b.start;
+    
+    const currentAlgo = document.getElementById('algo').value;
+    let titleText = `${b.pid} (${duration}ms)`;
+    
+    if (currentAlgo === 'RR') {
+      titleText += ` | Quantum: ${document.getElementById('in-quantum').value}`;
+    } else if (currentAlgo === 'MLQ' && p) {
+      if (p.queue === 1 && document.getElementById('mlq-q1-algo').value === 'RR') titleText += ` | Q1 Quantum: ${document.getElementById('mlq-q1-quantum').value}`;
+      if (p.queue === 2 && document.getElementById('mlq-q2-algo').value === 'RR') titleText += ` | Q2 Quantum: ${document.getElementById('mlq-q2-quantum').value}`;
+      if (p.queue === 3 && document.getElementById('mlq-q3-algo').value === 'RR') titleText += ` | Q3 Quantum: ${document.getElementById('mlq-q3-quantum').value}`;
+      if (p.queue === 4 && document.getElementById('mlq-q4-algo').value === 'RR') titleText += ` | Q4 Quantum: ${document.getElementById('mlq-q4-quantum').value}`;
+    }
 
-    // ONLY the PID is inside the block now
     return `
-      <div class="gantt-bar ${colorClass}" id="gantt-bar-${index}" data-index="${index}" style="width: 0%; display: none;">
+      <div class="gantt-bar ${colorClass}" id="gantt-bar-${index}" data-index="${index}" style="width: 0%; display: none;" title="${titleText}">
         <span class="gantt-pid">${b.pid}</span>
       </div>
     `;
@@ -298,7 +340,11 @@ function resetSim() {
   
   document.getElementById('completed-queue').innerHTML = '<span class="empty-label">No completed tasks</span>';
   
-  // REPLACED TICK LOGIC: Place the MS at the EXACT stop time of every block
+  // Clear the Execution Sequence Guide
+  const traceList = document.getElementById('trace-guide-list');
+  if (traceList) traceList.innerHTML = '';
+
+  // Tick generation based strictly on timeline boundaries
   const ticks = document.getElementById('gantt-ticks');
   ticks.innerHTML = '';
   ticks.style.position = 'relative';
@@ -538,6 +584,27 @@ function updateUI() {
           bar.style.display = 'flex'; bar.style.width = `${widthPct}%`;
         }
       });
+    }
+  }
+
+  // --- UPDATE EXECUTION SEQUENCE GUIDE ---
+  const traceList = document.getElementById('trace-guide-list');
+  if (traceList) {
+    if (currentTime === 0) {
+      traceList.innerHTML = '';
+    } else {
+      const executedBlocks = timeline.filter(b => b.start < currentTime);
+      
+      const traceHTML = executedBlocks.map((b, index) => {
+        const p = processes.find(x => x.pid === b.pid);
+        const colorClass = p ? `process-${p.color}` : '';
+        
+        const arrow = index > 0 ? '<span class="trace-arrow">→</span>' : '';
+        
+        return `${arrow}<div class="trace-box ${colorClass}" style="border-color: currentColor; color: ${p ? p.color : '#fff'}">${b.pid}</div>`;
+      }).join('');
+      
+      traceList.innerHTML = traceHTML;
     }
   }
 
